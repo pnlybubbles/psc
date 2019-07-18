@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "bower": "^1.8.8",
+    "pulp": "^13.0.0",
+    "purescript": "^0.13.2"
+  },
+  "scripts": {
+    "start": "pulp run",
+    "test": "pulp test"
+  }
+}
