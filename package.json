@@ -5,7 +5,9 @@
     "purescript": "^0.13.2"
   },
   "scripts": {
-    "start": "pulp run",
+    "start": "pulp build && node index.js",
+    "sample": "yarn run start sample.c && gcc sample.s && ./a.out",
     "test": "pulp test"
-  }
+  },
+  "license": "MIT"
 }

@@ -1,9 +1,12 @@
 module Main where
 
 import Prelude
-import Effect (Effect)
-import Effect.Console (log)
+import Data.String (trim)
 
-main :: Effect Unit
-main = do
-  log "Hello PS!"
+main :: String -> String
+main value = """.intel_syntax noprefix
+.global _main
+_main:
+        mov rax, """ <> trim value <> """
+        ret
+"""
