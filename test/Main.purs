@@ -9,7 +9,9 @@ import Data.String as String
 import Data.String.CodeUnits (fromCharArray)
 import Effect (Effect)
 import Effect.Aff (Aff)
-import Main (Parser, ParserContinue, bind, char, item, mplus, mzero, oneOf, parse, return, satisfy, string, (<|>))
+import Effect.Class (liftEffect)
+import Effect.Console (logShow)
+import Main (ParserContinue, bind, char, digit, factor, item, many, mplus, mzero, number, oneOf, opMulDiv, parse, return, satisfy, string, term, term', (<|>))
 import Test.Unit (suite, test)
 import Test.Unit.Assert as Assert
 import Test.Unit.Main (runTest)
@@ -89,6 +91,11 @@ main = runTest do
       assertParser r "hello" "test"
 
   suite "Match to /./" do
+    let
+      p2 = item
+        `bind` \a -> item
+        `bind` \b -> return $ fromCharArray [a, b]
+
     test "Parse 'a' to get any character and '' is left" do
       let r = parse item "a"
       assertParser r 'a' ""
@@ -102,19 +109,11 @@ main = runTest do
       Assert.assert "length" $ Array.length r == 0
 
     test "Parse 'abc123' to get 2 characters and 'c123' is left" do
-      let
-        p = item
-          `bind` \a -> item
-          `bind` \b -> return $ fromCharArray [a, b]
-        r = parse p "abc123"
+      let r = parse p2 "abc123"
       assertParser r "ab" "c123"
 
     test "Parse 'a' to get 2 characters and reject" do
-      let
-        p = item
-          `bind` \a -> item
-          `bind` \b -> return $ fromCharArray [a, b]
-        r = parse p "a"
+      let r = parse p2 "a"
       Assert.assert "length" $ Array.length r == 0
 
   suite "Match to the character which passes the provided function" do
@@ -157,20 +156,155 @@ main = runTest do
       Assert.assert "length" $ Array.length r == 0
 
   suite "Match to /aaa|bbb|ccc/" do
-    test "Parse 'baz123' to get 'foo' or 'baz'" do
+    test "Parse 'baz123' to match /foo|baz/" do
       let
         p = string "foo" <|> string "baz"
         r = parse p "baz123"
       assertParser r "baz" "123"
 
-    test "Parse 'baz123' to get 'foo' or 'bar' or 'baz'" do
+    test "Parse 'baz123' to match /foo|bar|baz/" do
       let
         p = string "foo" <|> string "bar" <|> string "baz"
         r = parse p "baz123"
       assertParser r "baz" "123"
 
-    test "Parse 'xxx123' to get 'foo' or 'bar' or 'baz' and reject" do
+    test "Parse 'xxx123' to match /foo|bar|baz/ and reject" do
       let
         p = string "foo" <|> string "bar" <|> string "baz"
         r = parse p "xxx123"
       Assert.assert "length" $ Array.length r == 0
+
+  suite "Match to /ab?c/" do
+    let
+      p = char 'a'
+        `bind` \a -> pb
+        `bind` \b -> char 'c'
+        `bind` \c -> return $ fromCharArray $ [a] <> b <> [c]
+      pb = (char 'b' `bind` \b -> return [b]) <|> return []
+
+    test "Parse 'ac'" do
+      let
+        r = parse p "ac"
+      assertParser r "ac" ""
+
+    test "Parse 'abc'" do
+      let
+        r = parse p "abc"
+      assertParser r "abc" ""
+
+  suite "Match to /.+/" do
+    test "Parse 'aaab' to match /a+/" do
+      let
+        p = many $ char 'a'
+        r = parse p "aaab"
+      assertParser r ['a', 'a', 'a'] "b"
+
+    test "Parse 'bbbb' to match /a+/ and reject" do
+      let
+        p = many $ char 'a'
+        r = parse p "bbbb"
+      Assert.assert "length" $ Array.length r == 0
+
+  suite "Match to /[oneof]/" do
+    test "Parse 'b' to match /[abc]/" do
+      let
+        p = oneOf "abc"
+        r = parse p "b"
+      assertParser r 'b' ""
+
+    test "Parse '3' to match /[0-9]/" do
+      let r = parse digit "3"
+      assertParser r 3 ""
+
+    test "Parse '567' to match /[0-9]/ and '67' is left" do
+      let r = parse digit "567"
+      assertParser r 5 "67"
+
+  suite "Match to /[0-9]+/" do
+    test "Parse '123'" do
+      let r = parse number "123"
+      assertParser r 123.0 ""
+
+    test "Parse '012'" do
+      let r = parse number "012"
+      assertParser r 12.0 ""
+
+    test "Parse '12a' and 'a' is left" do
+      let r = parse number "12a"
+      assertParser r 12.0 "a"
+
+  suite "Match to /[*/]/" do
+    let p = opMulDiv `bind` \bop -> return $ 4.0 `bop` 2.0
+
+    test "Parse '*'" do
+      let r = parse p "*"
+      assertParser r 8.0 ""
+
+    test "Parse '/'" do
+      let r = parse p "/"
+      assertParser r 2.0 ""
+
+  suite "Match to /[*/][0-9]+/" do
+    let
+      term1 = opMulDiv
+        `bind` \bop -> factor
+        `bind` \f -> return $ flip bop f
+      p = term1
+        `bind` \op -> return $ op 4.0
+
+    test "Parse '*2'" do
+      let r = parse p "*2"
+      assertParser r 8.0 ""
+
+    test "Parse '*20'" do
+      let r = parse p "*20"
+      assertParser r 80.0 ""
+
+    test "Parse '/2'" do
+      let r = parse p "/2"
+      assertParser r 2.0 ""
+
+  suite "Match to /([*/][0-9])?/" do
+    let
+      term1 = (opMulDiv
+        `bind` \bop -> factor
+        `bind` \f -> return (flip bop f))
+        <|> return identity
+      p = term1
+        `bind` \op -> return $ op 4.0
+
+    test "Parse ''" do
+      let r = parse p ""
+      assertParser r 4.0 ""
+
+    test "Parse '*2'" do
+      let r = parse p "*2"
+      assertParser r 8.0 ""
+
+  suite "Match to /([*/][0-9]+)*/" do
+    let p = term' `bind` \op -> return $ op $ 4.0
+
+    test "parse ''" do
+      let r = parse p ""
+      assertParser r 4.0 ""
+
+    test "Parse '*2'" do
+      let r = parse p "*2"
+      assertParser r 8.0 ""
+
+    test "Parse '*2*3'" do
+      let r = parse p "*2*3"
+      assertParser r 24.0 ""
+
+  suite "Match to /[0-9]+([*/][0-9]+)*/" do
+    test "Parse '2*3'" do
+      let r = parse term "2*3"
+      assertParser r 6.0 ""
+
+    test "Parse '3/2'" do
+      let r = parse term "3/2"
+      assertParser r 1.5 ""
+
+    test "Parse '2*3*10/4'" do
+      let r = parse term "2*3*10/4"
+      assertParser r 15.0 ""
