@@ -9,9 +9,8 @@ import Data.String as String
 import Data.String.CodeUnits (fromCharArray)
 import Effect (Effect)
 import Effect.Aff (Aff)
-import Effect.Class (liftEffect)
-import Effect.Console (logShow)
-import Main (ParserContinue, bind, char, digit, factor, item, many, mplus, mzero, number, oneOf, opMulDiv, parse, return, satisfy, string, term, term', (<|>))
+import Fundamental (ParserContinue, bind', char, item, many, mplus, mzero, oneOf, parse, return, satisfy, string, (<|>))
+import Main (digit, expr, factor, number, opMulDiv, term, term')
 import Test.Unit (suite, test)
 import Test.Unit.Assert as Assert
 import Test.Unit.Main (runTest)
@@ -36,7 +35,7 @@ main = runTest do
       let
         a = "hello"
         f = \x -> return $ x <> "world"
-        p1 = return a `bind` f
+        p1 = return a `bind'` f
         p2 = f a
         r1 = parse p1 "test"
         r2 = parse p2 "test"
@@ -48,7 +47,7 @@ main = runTest do
     test "Right Identity" do
       let
         m = return "hello"
-        p1 = m `bind` return
+        p1 = m `bind'` return
         p2 = m
         r1 = parse p1 "test"
         r2 = parse p2 "test"
@@ -62,8 +61,8 @@ main = runTest do
         m = return "hello"
         f = \x -> return $ x <> "world"
         g = \x -> return $ String.length x
-        p1 = (m `bind` f) `bind` g
-        p2 = m `bind` (\x -> f x `bind` g)
+        p1 = (m `bind'` f) `bind'` g
+        p2 = m `bind'` (\x -> f x `bind'` g)
         r1 = parse p1 "test"
         r2 = parse p2 "test"
       assertParser r1 10 "test"
@@ -93,8 +92,8 @@ main = runTest do
   suite "Match to /./" do
     let
       p2 = item
-        `bind` \a -> item
-        `bind` \b -> return $ fromCharArray [a, b]
+        `bind'` \a -> item
+        `bind'` \b -> return $ fromCharArray [a, b]
 
     test "Parse 'a' to get any character and '' is left" do
       let r = parse item "a"
@@ -177,10 +176,10 @@ main = runTest do
   suite "Match to /ab?c/" do
     let
       p = char 'a'
-        `bind` \a -> pb
-        `bind` \b -> char 'c'
-        `bind` \c -> return $ fromCharArray $ [a] <> b <> [c]
-      pb = (char 'b' `bind` \b -> return [b]) <|> return []
+        `bind'` \a -> pb
+        `bind'` \b -> char 'c'
+        `bind'` \c -> return $ fromCharArray $ [a] <> b <> [c]
+      pb = (char 'b' `bind'` \b -> return [b]) <|> return []
 
     test "Parse 'ac'" do
       let
@@ -234,7 +233,7 @@ main = runTest do
       assertParser r 12.0 "a"
 
   suite "Match to /[*/]/" do
-    let p = opMulDiv `bind` \bop -> return $ 4.0 `bop` 2.0
+    let p = opMulDiv `bind'` \bop -> return $ 4.0 `bop` 2.0
 
     test "Parse '*'" do
       let r = parse p "*"
@@ -247,10 +246,10 @@ main = runTest do
   suite "Match to /[*/][0-9]+/" do
     let
       term1 = opMulDiv
-        `bind` \bop -> factor
-        `bind` \f -> return $ flip bop f
+        `bind'` \bop -> factor
+        `bind'` \f -> return $ flip bop f
       p = term1
-        `bind` \op -> return $ op 4.0
+        `bind'` \op -> return $ op 4.0
 
     test "Parse '*2'" do
       let r = parse p "*2"
@@ -267,11 +266,11 @@ main = runTest do
   suite "Match to /([*/][0-9])?/" do
     let
       term1 = (opMulDiv
-        `bind` \bop -> factor
-        `bind` \f -> return (flip bop f))
+        `bind'` \bop -> factor
+        `bind'` \f -> return (flip bop f))
         <|> return identity
       p = term1
-        `bind` \op -> return $ op 4.0
+        `bind'` \op -> return $ op 4.0
 
     test "Parse ''" do
       let r = parse p ""
@@ -282,7 +281,7 @@ main = runTest do
       assertParser r 8.0 ""
 
   suite "Match to /([*/][0-9]+)*/" do
-    let p = term' `bind` \op -> return $ op $ 4.0
+    let p = term' `bind'` \op -> return $ op $ 4.0
 
     test "parse ''" do
       let r = parse p ""
@@ -308,3 +307,24 @@ main = runTest do
     test "Parse '2*3*10/4'" do
       let r = parse term "2*3*10/4"
       assertParser r 15.0 ""
+
+    test "Parse ''" do
+      let r = parse term ""
+      Assert.assert "length" $ Array.length r == 0
+
+  suite "Match to expression" do
+    test "Parse '2+3'" do
+      let r = parse expr "2+3"
+      assertParser r 5.0 ""
+
+    test "Parse '2+3*4'" do
+      let r = parse expr "2+3*4"
+      assertParser r 14.0 ""
+
+    test "Parse '2+3*4-5/2'" do
+      let r = parse expr "2+3*4-5/2"
+      assertParser r 11.5 ""
+
+    test "Parse ''" do
+      let r = parse expr ""
+      Assert.assert "length" $ Array.length r == 0
