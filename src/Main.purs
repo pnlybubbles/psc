@@ -9,8 +9,11 @@ import Data.String (trim)
 import Fundamental (Parser, bind', char, many, oneOf, return, (<|>))
 
 -- AST
+type Token = Number
 data Op = Add | Sub
-data Expr = Factor Number | Infix Op Expr Expr
+data Expr' = Infix Op Token Expr' | Phi
+data Expr = Expr Token Expr'
+type AST = Expr
 
 -- '+'
 opAdd :: Parser Op
@@ -35,17 +38,17 @@ number = (many $ digit)
     toInt = \acc x -> x + acc * 10
 
 -- E = T E'
-expr :: Parser Number
+expr :: Parser Expr
 expr = number
   `bind'` \t -> expr'
-  `bind'` \op -> return $ op t
+  `bind'` \e' -> return $ Expr t e'
 
 -- E' = opA T E' | e
-expr' :: Parser ()
+expr' :: Parser Expr'
 expr' = (opAddSub
   `bind'` \op -> number
-  `bind'` \t -> expr'
-  `bind'` \e -> return $ Infix op t)
+  `bind'` \t -> expr
+  `bind'` \e -> return $ Infix op e)
   <|> return identity
 
 main :: String -> String
