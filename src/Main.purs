@@ -11,7 +11,7 @@ import Fundamental (Parser, bind', char, many, oneOf, return, (<|>))
 -- AST
 type Token = Number
 data Op = Add | Sub
-data Expr' = Infix Op Token Expr' | Phi
+data Expr' = Infix Op Token Expr | Phi
 data Expr = Expr Token Expr'
 type AST = Expr
 
