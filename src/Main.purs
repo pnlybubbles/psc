@@ -57,8 +57,9 @@ opAddSub = opAdd <|> opSub
 
 -- digit = '0' | '1' | ... | '9'
 digit :: Parser Int
-digit = oneOf "0123456789"
-  >>= \c -> pure $ toCharCode c - toCharCode '0'
+digit = do
+  c <- oneOf "0123456789"
+  pure $ toCharCode c - toCharCode '0'
 
 -- number = { digit }
 number :: Parser Number
