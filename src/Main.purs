@@ -17,6 +17,11 @@ data Op = Add | Sub
 data Expr' = Infix Op Term Expr' | Phi
 data Expr = Expr Term Expr'
 
+derive instance eqTerm :: Eq Term
+derive instance eqOp :: Eq Op
+derive instance eqExpr' :: Eq Expr'
+derive instance eqExpr :: Eq Expr
+
 instance showTerm :: Show Term where
   show (Term n) = showAST "term" [show n]
 

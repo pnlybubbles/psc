@@ -9,8 +9,8 @@ import Data.String as String
 import Data.String.CodeUnits (fromCharArray)
 import Effect (Effect)
 import Effect.Aff (Aff)
-import Fundamental (ParserContinue, bind', char, item, many, mplus, mzero, oneOf, parse, return, satisfy, string, (<|>))
-import Main (digit, expr, factor, number, opMulDiv, term, term')
+import Fundamental (ParserContinue, char, item, many, mplus, mzero, oneOf, parse, satisfy, string, (<|>))
+import Main (Expr(..), Expr'(..), Op(..), Term(..), digit, expr, expr', number, opAdd, opAddSub, term)
 import Test.Unit (suite, test)
 import Test.Unit.Assert as Assert
 import Test.Unit.Main (runTest)
@@ -26,7 +26,7 @@ main = runTest do
 
   suite "Parser Monad" do
     test "return" do
-      let r = parse (return "hello") "world"
+      let r = parse (pure "hello") "world"
       assertParser r "hello" "world"
 
     -- return a >>= f == f a
@@ -34,8 +34,8 @@ main = runTest do
     test "Left Identity" do
       let
         a = "hello"
-        f = \x -> return $ x <> "world"
-        p1 = return a `bind'` f
+        f = \x -> pure $ x <> "world"
+        p1 = pure a >>= f
         p2 = f a
         r1 = parse p1 "test"
         r2 = parse p2 "test"
@@ -46,8 +46,8 @@ main = runTest do
     -- 単位元 m * I = m
     test "Right Identity" do
       let
-        m = return "hello"
-        p1 = m `bind'` return
+        m = pure "hello"
+        p1 = m >>= pure
         p2 = m
         r1 = parse p1 "test"
         r2 = parse p2 "test"
@@ -58,11 +58,11 @@ main = runTest do
     -- 結合法則 (m * f) * g = m * (f * g)
     test "Associativity" do
       let
-        m = return "hello"
-        f = \x -> return $ x <> "world"
-        g = \x -> return $ String.length x
-        p1 = (m `bind'` f) `bind'` g
-        p2 = m `bind'` (\x -> f x `bind'` g)
+        m = pure "hello"
+        f = \x -> pure $ x <> "world"
+        g = \x -> pure $ String.length x
+        p1 = (m >>= f) >>= g
+        p2 = m >>= (\x -> f x >>= g)
         r1 = parse p1 "test"
         r2 = parse p2 "test"
       assertParser r1 10 "test"
@@ -75,25 +75,26 @@ main = runTest do
 
     test "mplus" do
       let
-        m = return "hello"
-        n = return "world"
+        m = pure "hello"
+        n = pure "world"
         p = m `mplus` n
         r = parse p "test"
       Assert.assert "length" $ Array.length r == 2
 
     test "choice" do
       let
-        m = return "hello"
-        n = return "world"
+        m = pure "hello"
+        n = pure "world"
         p = m <|> n
         r = parse p "test"
       assertParser r "hello" "test"
 
   suite "Match to /./" do
     let
-      p2 = item
-        `bind'` \a -> item
-        `bind'` \b -> return $ fromCharArray [a, b]
+      p2 = do
+        a <- item
+        b <- item
+        pure $ fromCharArray [a, b]
 
     test "Parse 'a' to get any character and '' is left" do
       let r = parse item "a"
@@ -175,11 +176,15 @@ main = runTest do
 
   suite "Match to /ab?c/" do
     let
-      p = char 'a'
-        `bind'` \a -> pb
-        `bind'` \b -> char 'c'
-        `bind'` \c -> return $ fromCharArray $ [a] <> b <> [c]
-      pb = (char 'b' `bind'` \b -> return [b]) <|> return []
+      p = do
+        a <- char 'a'
+        b <- pb
+        c <- char 'c'
+        pure $ fromCharArray $ [a] <> b <> [c]
+      pb = do
+        b <- char 'b'
+        pure [b]
+        <|> pure []
 
     test "Parse 'ac'" do
       let
@@ -232,98 +237,40 @@ main = runTest do
       let r = parse number "12a"
       assertParser r 12.0 "a"
 
-  suite "Match to /[*/]/" do
-    let p = opMulDiv `bind'` \bop -> return $ 4.0 `bop` 2.0
+  suite "Match to /[+-]/" do
+    test "Parse '+'" do
+      let r = parse opAddSub "+"
+      assertParser r Add ""
 
-    test "Parse '*'" do
-      let r = parse p "*"
-      assertParser r 8.0 ""
-
-    test "Parse '/'" do
-      let r = parse p "/"
-      assertParser r 2.0 ""
-
-  suite "Match to /[*/][0-9]+/" do
-    let
-      term1 = opMulDiv
-        `bind'` \bop -> factor
-        `bind'` \f -> return $ flip bop f
-      p = term1
-        `bind'` \op -> return $ op 4.0
-
-    test "Parse '*2'" do
-      let r = parse p "*2"
-      assertParser r 8.0 ""
-
-    test "Parse '*20'" do
-      let r = parse p "*20"
-      assertParser r 80.0 ""
-
-    test "Parse '/2'" do
-      let r = parse p "/2"
-      assertParser r 2.0 ""
-
-  suite "Match to /([*/][0-9])?/" do
-    let
-      term1 = (opMulDiv
-        `bind'` \bop -> factor
-        `bind'` \f -> return (flip bop f))
-        <|> return identity
-      p = term1
-        `bind'` \op -> return $ op 4.0
-
-    test "Parse ''" do
-      let r = parse p ""
-      assertParser r 4.0 ""
-
-    test "Parse '*2'" do
-      let r = parse p "*2"
-      assertParser r 8.0 ""
+    test "Parse '-'" do
+      let r = parse opAddSub "-"
+      assertParser r Sub ""
 
   suite "Match to /([*/][0-9]+)*/" do
-    let p = term' `bind'` \op -> return $ op $ 4.0
-
     test "parse ''" do
-      let r = parse p ""
-      assertParser r 4.0 ""
+      let r = parse expr' ""
+      assertParser r Phi ""
 
-    test "Parse '*2'" do
-      let r = parse p "*2"
-      assertParser r 8.0 ""
+    test "Parse '+2'" do
+      let r = parse expr' "+2"
+      assertParser r (Infix Add (Term 2.0) Phi) ""
 
-    test "Parse '*2*3'" do
-      let r = parse p "*2*3"
-      assertParser r 24.0 ""
+    test "Parse '+2+3'" do
+      let r = parse expr' "+2+3"
+      assertParser r (Infix Add (Term 2.0) (Infix Add (Term 3.0) Phi)) ""
 
-  suite "Match to /[0-9]+([*/][0-9]+)*/" do
-    test "Parse '2*3'" do
-      let r = parse term "2*3"
-      assertParser r 6.0 ""
-
-    test "Parse '3/2'" do
-      let r = parse term "3/2"
-      assertParser r 1.5 ""
-
-    test "Parse '2*3*10/4'" do
-      let r = parse term "2*3*10/4"
-      assertParser r 15.0 ""
-
-    test "Parse ''" do
-      let r = parse term ""
-      Assert.assert "length" $ Array.length r == 0
-
-  suite "Match to expression" do
+  suite "Match to expr" do
     test "Parse '2+3'" do
       let r = parse expr "2+3"
-      assertParser r 5.0 ""
+      assertParser r (Expr (Term 2.0) (Infix Add (Term 3.0) Phi)) ""
 
-    test "Parse '2+3*4'" do
-      let r = parse expr "2+3*4"
-      assertParser r 14.0 ""
+    test "Parse '3-2'" do
+      let r = parse expr "3-2"
+      assertParser r (Expr (Term 3.0) (Infix Sub (Term 2.0) Phi)) ""
 
-    test "Parse '2+3*4-5/2'" do
-      let r = parse expr "2+3*4-5/2"
-      assertParser r 11.5 ""
+    test "Parse '2+10-4'" do
+      let r = parse expr "2+10-4"
+      assertParser r (Expr (Term 2.0) (Infix Add (Term 10.0) (Infix Sub (Term 4.0) Phi))) ""
 
     test "Parse ''" do
       let r = parse expr ""
