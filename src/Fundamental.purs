@@ -67,7 +67,8 @@ choice p q = Parser $ \cs -> case head $ parse (mplus p q) cs of
 infixr 4 choice as <|>
 
 satisfy :: (Char -> Boolean) -> Parser Char
-satisfy f = item >>= \a ->
+satisfy f = do
+  a <- item
   if f a
     then pure a
     else mzero
@@ -78,9 +79,10 @@ char a = satisfy $ (==) a
 string :: String -> Parser String
 string cs = case uncons cs of
   Nothing -> pure ""
-  Just { head: c, tail: cs' } -> char c
-    >>= \_ -> string cs'
-    >>= \_ -> pure cs
+  Just { head: c, tail: cs' } -> do
+    _ <- char c
+    _ <- string cs'
+    pure cs
 
 oneOf :: String -> Parser Char
 oneOf cs = satisfy $ \c -> case indexOf (Pattern $ singleton c) cs of
@@ -88,6 +90,7 @@ oneOf cs = satisfy $ \c -> case indexOf (Pattern $ singleton c) cs of
   Just _ -> true
 
 many :: forall a. Parser a -> Parser (Array a)
-many p = p
-  >>= \a -> (many p <|> pure [])
-  >>= \as -> pure $ [a] <> as
+many p = do
+  a <- p
+  as <- (many p <|> pure [])
+  pure $ [a] <> as

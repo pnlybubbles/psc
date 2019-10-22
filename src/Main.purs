@@ -36,10 +36,16 @@ showAST label children = label <> "[" <> joinWith " " children <> "]"
 
 -- '+'
 opAdd :: Parser Op
-opAdd = char '+' >>= \_ -> pure Add
+opAdd = do
+  _ <- char '+'
+  pure Add
+
 -- '-'
 opSub :: Parser Op
-opSub = char '-' >>= \_ -> pure Sub
+opSub = do
+  _ <- char '-'
+  pure Sub
+
 -- opA = '+' | '-'
 opAddSub :: Parser Op
 opAddSub = opAdd <|> opSub
@@ -51,35 +57,42 @@ digit = oneOf "0123456789"
 
 -- number = { digit }
 number :: Parser Number
-number = (many $ digit)
-  >>= \ds -> pure $ toNumber $ foldl toInt 0 ds
+number = do
+  ds <- (many $ digit)
+  pure $ toNumber $ foldl toInt 0 ds
   where
     toInt = \acc x -> x + acc * 10
 
--- token = number
-token :: Parser Term
-token = number
-  >>= \n -> pure $ Term n
+-- term = number
+term :: Parser Term
+term = do
+  n <- number
+  pure $ Term n
 
 -- E = T E'
 expr :: Parser Expr
-expr = token
-  >>= \t -> expr'
-  >>= \e' -> pure $ Expr t e'
+expr = do
+  t <-term
+  e' <- expr'
+  pure $ Expr t e'
 
 -- E' = opA T E' | e
 expr' :: Parser Expr'
-expr' = (opAddSub
-  >>= \op -> token
-  >>= \t -> expr'
-  >>= \e -> pure $ Infix op t e)
+expr' = do
+  op <- opAddSub
+  t <- term
+  e' <- expr'
+  pure $ Infix op t e'
   <|> pure Phi
+
+program :: Parser Expr
+program = expr
 
 main :: Effect Unit
 main = do
   let input = "2+3-4+5"
   log $ "input: " <> input
-  log $ show $ head $ parse expr input <#> \v -> v.value
+  log $ show $ head $ _.value <$> parse program input
 
 -- main :: String -> String
 -- main value = """.intel_syntax noprefix
