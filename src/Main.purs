@@ -2,110 +2,34 @@ module Main where
 
 import Prelude
 
+import Ast (AST, Expr(..), Expr'(..), Op(..), Term(..))
 import Data.Array (head)
-import Data.Char (toCharCode)
-import Data.Foldable (foldl)
-import Data.Int (toNumber)
-import Data.String (joinWith)
-import Effect (Effect)
-import Effect.Console (log)
-import Fundamental (Parser, char, many, oneOf, parse, (<|>))
+import Data.Maybe (Maybe(..))
+import Data.Number.Format (toString)
+import Data.String (trim)
+import Fundamental (parse)
+import Parser (program)
 
--- AST
-data Term = Term Number
-data Op = Add | Sub
-data Expr' = Infix Op Term Expr' | Phi
-data Expr = Expr Term Expr'
+compile :: AST -> String
+compile (Expr (Term n) e') = """.intel_syntax noprefix
+.global _main
+_main:
+""" <> "mov rax, " <> toString n <> "\n" <> compileExpr' e' <> "ret\n"
 
-derive instance eqTerm :: Eq Term
-derive instance eqOp :: Eq Op
-derive instance eqExpr' :: Eq Expr'
-derive instance eqExpr :: Eq Expr
-
-instance showTerm :: Show Term where
-  show (Term n) = showAST "term" [show n]
-
-instance showOp :: Show Op where
-  show Add = showAST "+" []
-  show Sub = showAST "-" []
-
-instance showExpr' :: Show Expr' where
-  show (Infix op t e') = showAST "expr'" [show t, show e']
-  show Phi = showAST "phi" []
-
-instance showExpr :: Show Expr where
-  show (Expr t e') = showAST "expr" [show t, show e']
-
-showAST :: String -> Array String -> String
-showAST label children = label <> "[" <> joinWith " " children <> "]"
-
--- '+'
-opAdd :: Parser Op
-opAdd = do
-  _ <- char '+'
-  pure Add
-
--- '-'
-opSub :: Parser Op
-opSub = do
-  _ <- char '-'
-  pure Sub
-
--- opA = '+' | '-'
-opAddSub :: Parser Op
-opAddSub = opAdd <|> opSub
-
--- digit = '0' | '1' | ... | '9'
-digit :: Parser Int
-digit = do
-  c <- oneOf "0123456789"
-  pure $ toCharCode c - toCharCode '0'
-
--- number = { digit }
-number :: Parser Number
-number = do
-  ds <- (many $ digit)
-  pure $ toNumber $ foldl toInt 0 ds
+compileExpr' :: Expr' -> String
+compileExpr' Phi = ""
+compileExpr' (Infix op (Term n) e') = ops <> " rax, " <> toString n <> "\n" <> compileExpr' e'
   where
-    toInt = \acc x -> x + acc * 10
+    ops = case op of
+      Add -> "add"
+      Sub -> "sub"
 
--- term = number
-term :: Parser Term
-term = do
-  n <- number
-  pure $ Term n
+type Result = { result :: String, error :: String }
 
--- E = T E'
-expr :: Parser Expr
-expr = do
-  t <-term
-  e' <- expr'
-  pure $ Expr t e'
-
--- E' = opA T E' | e
-expr' :: Parser Expr'
-expr' = do
-  op <- opAddSub
-  t <- term
-  e' <- expr'
-  pure $ Infix op t e'
-  <|> pure Phi
-
-program :: Parser Expr
-program = expr
-
-main :: Effect Unit
-main = do
-  let input = "2+3-4+5"
-  log $ "input: " <> input
-  log $ show $ head $ _.value <$> parse program input
-
--- main :: String -> String
--- main value = """.intel_syntax noprefix
--- .global _main
--- _main:
---   mov rax, """ <> src <> """
---   ret
--- """
---   where
---     src = trim value
+main :: String -> Result
+main value = case ast of
+  Nothing -> { result: "", error: "Parse failed" }
+  Just a -> { result: compile a, error: "" }
+  where
+    input = trim value
+    ast = head $ _.value <$> parse program input

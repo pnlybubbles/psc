@@ -27,7 +27,11 @@ const input = fs.readFileSync(entryPath).toString()
 // Compile
 const output = main(input)
 
+if (output.error.length > 0) {
+  throw new Error(output.error)
+}
+
 // Write
-fs.writeFileSync(outPath, output)
+fs.writeFileSync(outPath, output.result)
 
 console.log(`Output: ${outPath}`)
