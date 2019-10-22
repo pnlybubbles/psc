@@ -19,18 +19,39 @@ item = Parser $ \cs -> case uncons cs of
   Nothing -> []
   Just { head: c, tail: cs' } -> [{ value: c, rest: cs'}]
 
-return :: forall a. a -> Parser a
-return v = Parser $ \cs -> [{ value: v, rest: cs }]
+instance functorParser :: Functor Parser where
+  map f p = Parser $ \cs ->
+    let
+      l = parse p cs
+    in
+      map func l
+    where
+      func { value: v, rest: s } = { value: f v, rest: s }
 
-bind' :: forall a b. Parser a -> (a -> Parser b) -> Parser b
-bind' p f = Parser $ \cs ->
-  let
-    l = parse p cs
-    ll = map func l
-  in
-    concat ll
-  where
-    func { value: v, rest: s } = parse (f v) s
+instance applyParser :: Apply Parser where
+  apply pf p = Parser $ \cs ->
+    let
+      l = parse pf cs
+      ll = map func l
+    in
+      concat ll
+    where
+      func { value: f, rest: s } = parse (map f p) s
+
+instance applicativeParser :: Applicative Parser where
+  pure v = Parser $ \cs -> [{ value: v, rest: cs }]
+
+instance bindParser :: Bind Parser where
+  bind p f = Parser $ \cs ->
+    let
+      l = parse p cs
+      ll = map func l
+    in
+      concat ll
+    where
+      func { value: v, rest: s } = parse (f v) s
+
+instance monadParser :: Monad Parser
 
 mzero :: forall a. Parser a
 mzero = Parser $ \cs -> []
@@ -46,9 +67,9 @@ choice p q = Parser $ \cs -> case head $ parse (mplus p q) cs of
 infixr 4 choice as <|>
 
 satisfy :: (Char -> Boolean) -> Parser Char
-satisfy f = item `bind'` \a ->
+satisfy f = item >>= \a ->
   if f a
-    then return a
+    then pure a
     else mzero
 
 char :: Char -> Parser Char
@@ -56,10 +77,10 @@ char a = satisfy $ (==) a
 
 string :: String -> Parser String
 string cs = case uncons cs of
-  Nothing -> return ""
+  Nothing -> pure ""
   Just { head: c, tail: cs' } -> char c
-    `bind'` \_ -> string cs'
-    `bind'` \_ -> return cs
+    >>= \_ -> string cs'
+    >>= \_ -> pure cs
 
 oneOf :: String -> Parser Char
 oneOf cs = satisfy $ \c -> case indexOf (Pattern $ singleton c) cs of
@@ -68,5 +89,5 @@ oneOf cs = satisfy $ \c -> case indexOf (Pattern $ singleton c) cs of
 
 many :: forall a. Parser a -> Parser (Array a)
 many p = p
-  `bind'` \a -> (many p <|> return [])
-  `bind'` \as -> return $ [a] <> as
+  >>= \a -> (many p <|> pure [])
+  >>= \as -> pure $ [a] <> as
